@@ -46,10 +46,7 @@ This keeps the public Git tag clean while preserving the exact four-part DLL ver
 - The package places `NppAIAssistant.dll` at the zip root
 - Documentation is placed under `doc/NppAIAssistant/`
 
-### Still required at release time
-- Publish a GitHub Release with the generated `.zip`
-- Use the final release asset URL as the `repository` field
-- Confirm the published zip hash is the same as the generated `id`
+### Remaining external step
 - Submit a PR to `https://github.com/notepad-plus-plus/nppPluginList`
 - Optionally add `x86` or `arm64` builds if you want those architectures listed
 
@@ -99,10 +96,10 @@ Update this file before packaging if you need to change:
 - description
 - author
 - homepage
-- repository placeholder
+- repository homepage
 
 ## Notes
 
 - The current repo is ready for `x64` submission preparation.
 - It is not yet ready for `x86` or `arm64` distribution unless those builds are added and tested.
-- Before the actual PR, replace placeholder GitHub URLs with the final public repository and release asset URLs.
+- The release asset URL and SHA-256 have already been verified for the published `v0.1.0` package.
