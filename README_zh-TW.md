@@ -25,6 +25,7 @@
 ## 目錄
 
 - [專案亮點](#專案亮點)
+- [安全與設定儲存](#安全與設定儲存)
 - [截圖](#截圖)
 - [建置](#建置)
 - [安裝](#安裝)
@@ -39,8 +40,17 @@
 | **提示詞可視化** | 設定中即時預覽實際送出的提示結構 |
 | **不保留記憶** | 單輪對話設計，不依賴跨請求隱藏上下文 |
 | **動態模型載入** | 登入或設定 API Key 後自動取得可用模型 |
+| **更安全的秘密儲存** | 機敏憑證改為本機 DPAPI 保護並支援舊版遷移 |
 | **右鍵選單整合** | 常用編輯操作直接融入右鍵功能選單 |
 | **雙語介面** | 支援英文與繁體中文 |
+
+## 安全與設定儲存
+
+- API Key 與 OAuth token 儲存在 `%LocalAppData%\Notepad++\AIAssistant`。
+- 機敏值使用 Windows DPAPI 保護。
+- 一般偏好設定改存於 `%AppData%\Notepad++\plugins\config\NppAIAssistant.ini`。
+- 更新後首次啟動會自動遷移舊版 roaming secure blobs。
+- Gemini 連線改用 `x-goog-api-key` header，不再把 API key 放進 query string。
 
 ## 截圖
 
@@ -108,7 +118,7 @@ scripts/install-npp-ai-plugin.ps1
 ```
 NppAIAssistant/
 ├── src/                  # 外掛主程式、資源檔、版本資訊
-│   └── shared/           # HTTP、Provider API、安全儲存共用元件
+│   └── shared/           # HTTP、Provider API、安全與一般設定儲存
 ├── vendor/
 │   ├── notepadpp/        # Notepad++ plugin & docking headers
 │   └── scintilla/include # 外掛介面所需的 Scintilla headers
@@ -116,7 +126,14 @@ NppAIAssistant/
 └── scripts/              # 安裝與打包輔助腳本
 ```
 
-延伸閱讀：[專案結構](PROJECT_STRUCTURE.md) · [使用說明](docs/USAGE.md) · [Plugins Admin 提交指南](docs/PLUGIN_ADMIN_SUBMISSION.md)
+延伸閱讀：
+
+- [專案結構](PROJECT_STRUCTURE.md)
+- [使用說明](docs/USAGE.md)
+- [開發紀錄](docs/DEVELOPMENT_LOG.md)
+- [安全性修補建議](docs/SECURITY_REMEDIATION.md)
+- [安全性驗證清單](docs/SECURITY_VERIFICATION.md)
+- [Plugins Admin 提交指南](docs/PLUGIN_ADMIN_SUBMISSION.md)
 
 ## 發佈與 Plugins Admin
 

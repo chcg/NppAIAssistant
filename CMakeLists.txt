@@ -11,6 +11,7 @@ add_library(NppAIAssistant SHARED
     src/NppAIAssistantResources.rc
     src/shared/HttpClient.cpp
     src/shared/LLMApiClient.cpp
+    src/shared/SettingsStorage.cpp
     src/shared/SecureStorage.cpp
 )
 
@@ -31,6 +32,7 @@ target_compile_definitions(NppAIAssistant PRIVATE
 
 target_link_libraries(NppAIAssistant PRIVATE
     comctl32
+    advapi32
     crypt32
     shell32
     shlwapi

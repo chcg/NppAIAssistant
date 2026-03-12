@@ -40,6 +40,8 @@ This repository is organized as a standalone Notepad++ plugin project.
   WinHTTP wrapper utilities.
 - `src/shared/LLMApiClient.*`
   Provider request and model-list integrations.
+- `src/shared/SettingsStorage.*`
+  Plain preference storage for non-secret settings in the standard plugin config path.
 - `src/shared/SecureStorage.*`
   Local secure storage for API keys and related settings.
 

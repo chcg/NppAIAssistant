@@ -46,6 +46,9 @@ public:
   // Get the storage directory path
   static std::wstring getStoragePath();
 
+  // Read a value from the legacy roaming secure storage path without migrating it.
+  static std::wstring loadLegacyValue(const std::wstring &keyName);
+
 private:
   // Encrypt data using DPAPI
   static std::vector<BYTE> encrypt(const std::wstring &data);
@@ -55,6 +58,13 @@ private:
 
   // Get full path for a key file
   static std::wstring getKeyFilePath(const std::wstring &keyName);
+
+  // Get the legacy roaming storage directory path
+  static std::wstring getLegacyStoragePath();
+
+  // Get full path for a key file in the provided storage directory
+  static std::wstring getKeyFilePath(const std::wstring &storagePath,
+                                     const std::wstring &keyName);
 
   // Write binary data to file
   static bool writeToFile(const std::wstring &filePath,

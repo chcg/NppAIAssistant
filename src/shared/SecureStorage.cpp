@@ -15,38 +15,152 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "SecureStorage.h"
+
+#include <Aclapi.h>
 #include <ShlObj.h>
 #include <fstream>
 #include <vector>
 #include <wincrypt.h>
 
-
 #pragma comment(lib, "crypt32.lib")
 
+namespace {
+
+std::wstring getStoragePathForCsidl(int csidl) {
+  wchar_t basePath[MAX_PATH] = {};
+  if (FAILED(SHGetFolderPath(nullptr, csidl, nullptr, 0, basePath))) {
+    return L"";
+  }
+
+  return std::wstring(basePath) + L"\\Notepad++\\AIAssistant";
+}
+
+bool ensureDirectoryTreeExists(const std::wstring &storagePath) {
+  if (storagePath.empty()) {
+    return false;
+  }
+
+  const size_t splitPos = storagePath.find_last_of(L"\\/");
+  if (splitPos == std::wstring::npos) {
+    return false;
+  }
+
+  const std::wstring parentPath = storagePath.substr(0, splitPos);
+  CreateDirectory(parentPath.c_str(), nullptr);
+  CreateDirectory(storagePath.c_str(), nullptr);
+
+  const DWORD attrs = GetFileAttributes(storagePath.c_str());
+  return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+bool buildAclForCurrentUser(std::vector<BYTE> &userSidBuffer, PACL &acl) {
+  acl = nullptr;
+
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+    return false;
+  }
+
+  DWORD tokenInfoSize = 0;
+  GetTokenInformation(token, TokenUser, nullptr, 0, &tokenInfoSize);
+  if (tokenInfoSize == 0) {
+    CloseHandle(token);
+    return false;
+  }
+
+  userSidBuffer.resize(tokenInfoSize);
+  if (!GetTokenInformation(token, TokenUser, userSidBuffer.data(),
+                           tokenInfoSize, &tokenInfoSize)) {
+    CloseHandle(token);
+    return false;
+  }
+  CloseHandle(token);
+
+  auto *tokenUser = reinterpret_cast<TOKEN_USER *>(userSidBuffer.data());
+
+  SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+  PSID adminSid = nullptr;
+  PSID systemSid = nullptr;
+
+  if (!AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
+                                DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0,
+                                &adminSid)) {
+    return false;
+  }
+
+  if (!AllocateAndInitializeSid(&ntAuthority, 1, SECURITY_LOCAL_SYSTEM_RID, 0,
+                                0, 0, 0, 0, 0, 0, &systemSid)) {
+    FreeSid(adminSid);
+    return false;
+  }
+
+  EXPLICIT_ACCESSW entries[3] = {};
+  const PSID sids[3] = {tokenUser->User.Sid, systemSid, adminSid};
+  for (int i = 0; i < 3; ++i) {
+    entries[i].grfAccessPermissions = FILE_ALL_ACCESS;
+    entries[i].grfAccessMode = SET_ACCESS;
+    entries[i].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    entries[i].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    entries[i].Trustee.ptstrName = static_cast<LPWSTR>(sids[i]);
+  }
+  entries[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
+  entries[1].Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+  entries[2].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
+
+  const DWORD aclResult = SetEntriesInAclW(3, entries, nullptr, &acl);
+  FreeSid(systemSid);
+  FreeSid(adminSid);
+
+  return aclResult == ERROR_SUCCESS;
+}
+
+void applyStorageAcl(const std::wstring &storagePath) {
+  std::vector<BYTE> userSidBuffer;
+  PACL acl = nullptr;
+  if (!buildAclForCurrentUser(userSidBuffer, acl)) {
+    return;
+  }
+
+  SetNamedSecurityInfoW(const_cast<LPWSTR>(storagePath.c_str()), SE_FILE_OBJECT,
+                        DACL_SECURITY_INFORMATION |
+                            PROTECTED_DACL_SECURITY_INFORMATION,
+                        nullptr, nullptr, acl, nullptr);
+  if (acl) {
+    LocalFree(acl);
+  }
+}
+
+bool fileExists(const std::wstring &filePath) {
+  const DWORD attrs = GetFileAttributes(filePath.c_str());
+  return attrs != INVALID_FILE_ATTRIBUTES &&
+         (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+} // namespace
+
 std::wstring SecureStorage::getStoragePath() {
-  wchar_t appDataPath[MAX_PATH] = {};
-
-  // Get AppData\Roaming path
-  if (SUCCEEDED(
-          SHGetFolderPath(nullptr, CSIDL_APPDATA, nullptr, 0, appDataPath))) {
-    std::wstring path = appDataPath;
-    path += L"\\Notepad++\\AIAssistant";
-
-    // Create directory if it doesn't exist
-    CreateDirectory((std::wstring(appDataPath) + L"\\Notepad++").c_str(),
-                    nullptr);
-    CreateDirectory(path.c_str(), nullptr);
-
+  const std::wstring path = getStoragePathForCsidl(CSIDL_LOCAL_APPDATA);
+  if (ensureDirectoryTreeExists(path)) {
+    applyStorageAcl(path);
     return path;
   }
 
   return L"";
 }
 
+std::wstring SecureStorage::getLegacyStoragePath() {
+  return getStoragePathForCsidl(CSIDL_APPDATA);
+}
+
 std::wstring SecureStorage::getKeyFilePath(const std::wstring &keyName) {
-  std::wstring storagePath = getStoragePath();
-  if (storagePath.empty())
+  return getKeyFilePath(getStoragePath(), keyName);
+}
+
+std::wstring SecureStorage::getKeyFilePath(const std::wstring &storagePath,
+                                           const std::wstring &keyName) {
+  if (storagePath.empty()) {
     return L"";
+  }
 
   return storagePath + L"\\" + keyName + L".key";
 }
@@ -57,16 +171,13 @@ std::vector<BYTE> SecureStorage::encrypt(const std::wstring &data) {
   if (data.empty())
     return encrypted;
 
-  // Convert wide string to bytes
   const BYTE *dataBytes = reinterpret_cast<const BYTE *>(data.c_str());
   DWORD dataSize = static_cast<DWORD>((data.length() + 1) * sizeof(wchar_t));
 
-  // Set up input data blob
   DATA_BLOB inputBlob = {};
   inputBlob.pbData = const_cast<BYTE *>(dataBytes);
   inputBlob.cbData = dataSize;
 
-  // Encrypt using DPAPI
   DATA_BLOB outputBlob = {};
   if (CryptProtectData(&inputBlob,
                        L"NppAIKey",               // Description
@@ -86,12 +197,10 @@ std::wstring SecureStorage::decrypt(const std::vector<BYTE> &data) {
   if (data.empty())
     return L"";
 
-  // Set up input data blob
   DATA_BLOB inputBlob = {};
   inputBlob.pbData = const_cast<BYTE *>(data.data());
   inputBlob.cbData = static_cast<DWORD>(data.size());
 
-  // Decrypt using DPAPI
   DATA_BLOB outputBlob = {};
   LPWSTR description = nullptr;
 
@@ -145,40 +254,58 @@ bool SecureStorage::saveApiKey(const std::wstring &keyName,
   if (keyName.empty())
     return false;
 
-  std::wstring filePath = getKeyFilePath(keyName);
+  const std::wstring filePath = getKeyFilePath(keyName);
   if (filePath.empty())
     return false;
 
-  // If value is empty, delete the key
   if (value.empty()) {
     return deleteApiKey(keyName);
   }
 
-  // Encrypt and save
   std::vector<BYTE> encrypted = encrypt(value);
   if (encrypted.empty())
     return false;
 
-  return writeToFile(filePath, encrypted);
+  const bool saved = writeToFile(filePath, encrypted);
+  if (saved) {
+    const std::wstring legacyPath = getKeyFilePath(getLegacyStoragePath(), keyName);
+    if (!legacyPath.empty()) {
+      DeleteFile(legacyPath.c_str());
+    }
+  }
+
+  return saved;
 }
 
 std::wstring SecureStorage::loadApiKey(const std::wstring &keyName) {
   if (keyName.empty())
     return L"";
 
-  std::wstring filePath = getKeyFilePath(keyName);
-  if (filePath.empty())
+  const std::wstring localPath = getKeyFilePath(keyName);
+  if (localPath.empty())
     return L"";
 
-  // Check if file exists
-  DWORD attrs = GetFileAttributes(filePath.c_str());
-  if (attrs == INVALID_FILE_ATTRIBUTES)
-    return L"";
+  if (fileExists(localPath)) {
+    const std::vector<BYTE> encrypted = readFromFile(localPath);
+    if (encrypted.empty())
+      return L"";
 
-  // Read and decrypt
-  std::vector<BYTE> encrypted = readFromFile(filePath);
-  if (encrypted.empty())
+    return decrypt(encrypted);
+  }
+
+  const std::wstring legacyPath = getKeyFilePath(getLegacyStoragePath(), keyName);
+  if (!fileExists(legacyPath)) {
     return L"";
+  }
+
+  const std::vector<BYTE> encrypted = readFromFile(legacyPath);
+  if (encrypted.empty()) {
+    return L"";
+  }
+
+  if (writeToFile(localPath, encrypted)) {
+    DeleteFile(legacyPath.c_str());
+  }
 
   return decrypt(encrypted);
 }
@@ -187,21 +314,48 @@ bool SecureStorage::deleteApiKey(const std::wstring &keyName) {
   if (keyName.empty())
     return false;
 
-  std::wstring filePath = getKeyFilePath(keyName);
-  if (filePath.empty())
-    return false;
+  bool deleted = false;
 
-  return DeleteFile(filePath.c_str()) != 0;
+  const std::wstring localPath = getKeyFilePath(keyName);
+  if (!localPath.empty() && fileExists(localPath)) {
+    deleted = DeleteFile(localPath.c_str()) != 0 || deleted;
+  }
+
+  const std::wstring legacyPath = getKeyFilePath(getLegacyStoragePath(), keyName);
+  if (!legacyPath.empty() && fileExists(legacyPath)) {
+    deleted = DeleteFile(legacyPath.c_str()) != 0 || deleted;
+  }
+
+  return deleted;
 }
 
 bool SecureStorage::hasApiKey(const std::wstring &keyName) {
   if (keyName.empty())
     return false;
 
-  std::wstring filePath = getKeyFilePath(keyName);
-  if (filePath.empty())
-    return false;
+  const std::wstring localPath = getKeyFilePath(keyName);
+  if (!localPath.empty() && fileExists(localPath)) {
+    return true;
+  }
 
-  DWORD attrs = GetFileAttributes(filePath.c_str());
-  return (attrs != INVALID_FILE_ATTRIBUTES);
+  const std::wstring legacyPath = getKeyFilePath(getLegacyStoragePath(), keyName);
+  return !legacyPath.empty() && fileExists(legacyPath);
+}
+
+std::wstring SecureStorage::loadLegacyValue(const std::wstring &keyName) {
+  if (keyName.empty()) {
+    return L"";
+  }
+
+  const std::wstring legacyPath = getKeyFilePath(getLegacyStoragePath(), keyName);
+  if (legacyPath.empty() || !fileExists(legacyPath)) {
+    return L"";
+  }
+
+  const std::vector<BYTE> encrypted = readFromFile(legacyPath);
+  if (encrypted.empty()) {
+    return L"";
+  }
+
+  return decrypt(encrypted);
 }

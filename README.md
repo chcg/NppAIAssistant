@@ -25,6 +25,7 @@ This repository is focused on the plugin itself. It does not carry the full Note
 ## Table of Contents
 
 - [Why It Stands Out](#why-it-stands-out)
+- [Security and Settings Storage](#security-and-settings-storage)
 - [Screenshots](#screenshots)
 - [Build](#build)
 - [Install](#install)
@@ -35,12 +36,21 @@ This repository is focused on the plugin itself. It does not carry the full Note
 
 | Feature | Description |
 |---------|-------------|
-| **Lightweight** | Ships as a standard Notepad++ plugin — no core fork needed |
+| **Lightweight** | Ships as a standard Notepad++ plugin with no core fork |
 | **Prompt visibility** | Live preview of the exact prompt structure in settings |
 | **No hidden memory** | Single-turn conversations with no cross-request context |
 | **Dynamic models** | Model list loads after provider login or API key setup |
+| **Safer secret storage** | Provider secrets now live in local DPAPI storage with legacy migration |
 | **Context menu** | Practical right-click actions for editing workflows |
 | **Bilingual UI** | English and Traditional Chinese support |
+
+## Security and Settings Storage
+
+- API keys and OAuth tokens are stored in `%LocalAppData%\Notepad++\AIAssistant`.
+- Secret values are protected with Windows DPAPI.
+- Non-secret preferences are stored separately in `%AppData%\Notepad++\plugins\config\NppAIAssistant.ini`.
+- Legacy roaming secure blobs are migrated automatically on first launch of the updated build.
+- Gemini requests now authenticate with the `x-goog-api-key` header instead of query-string API keys.
 
 ## Screenshots
 
@@ -108,7 +118,7 @@ scripts/install-npp-ai-plugin.ps1
 ```
 NppAIAssistant/
 ├── src/                  # Plugin source, resources, version info
-│   └── shared/           # HTTP, provider API, secure storage helpers
+│   └── shared/           # HTTP, provider API, secure and plain settings storage
 ├── vendor/
 │   ├── notepadpp/        # Vendored plugin & docking headers
 │   └── scintilla/include # Scintilla headers for the plugin interface
@@ -116,7 +126,14 @@ NppAIAssistant/
 └── scripts/              # Install and package helpers
 ```
 
-See also: [Project Structure](PROJECT_STRUCTURE.md) · [Usage Guide](docs/USAGE.md) · [Plugins Admin Submission Guide](docs/PLUGIN_ADMIN_SUBMISSION.md)
+See also:
+
+- [Project Structure](PROJECT_STRUCTURE.md)
+- [Usage Guide](docs/USAGE.md)
+- [Development Log](docs/DEVELOPMENT_LOG.md)
+- [Security Remediation Backlog](docs/SECURITY_REMEDIATION.md)
+- [Security Verification Checklist](docs/SECURITY_VERIFICATION.md)
+- [Plugins Admin Submission Guide](docs/PLUGIN_ADMIN_SUBMISSION.md)
 
 ## Release and Plugins Admin
 

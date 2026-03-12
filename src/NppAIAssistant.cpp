@@ -14,11 +14,13 @@
 #include "dockingResource.h"
 #include "LLMApiClient.h"
 #include "SecureStorage.h"
+#include "SettingsStorage.h"
 #include "NppAIAssistantResources.h"
 
 namespace {
 constexpr wchar_t kPluginName[] = L"NppAIAssistant";
 constexpr wchar_t kPanelTitle[] = L"AI Assistant";
+constexpr int kSettingsSchemaVersion = 1;
 constexpr size_t kMenuCount = 6;
 constexpr UINT_PTR kCopilotPollTimerId = 9001;
 constexpr DWORD kDefaultCopilotPollMs = 5000;
@@ -1049,6 +1051,164 @@ std::wstring getProviderApiKey(LLMProvider provider) {
   }
 }
 
+void wipeString(std::wstring &value) {
+  if (!value.empty()) {
+    SecureZeroMemory(value.data(), value.size() * sizeof(wchar_t));
+    value.clear();
+  }
+}
+
+bool parseStoredBool(const std::wstring &value, bool defaultValue) {
+  if (value == L"1") {
+    return true;
+  }
+  if (value == L"0") {
+    return false;
+  }
+  return defaultValue;
+}
+
+int parseStoredInt(const std::wstring &value, int defaultValue) {
+  if (value.empty()) {
+    return defaultValue;
+  }
+
+  try {
+    return std::stoi(value);
+  } catch (...) {
+    return defaultValue;
+  }
+}
+
+void cleanupSecurePreferenceBlobs() {
+  const wchar_t *preferenceKeys[] = {
+      kDefaultProviderName,
+      kUiLanguagePreferenceName,
+      kResponseLanguageName,
+      kEncodingPreferenceName,
+      kPromptPresetName,
+      kDetailLevelName,
+      kScenarioFlagsName,
+      kOutputCodeOnlyName,
+      kOutputPreserveStyleName,
+      kOutputMentionRisksName,
+      kCustomPromptInstructionsName,
+      kRequireCtrlEnterName};
+
+  for (const wchar_t *keyName : preferenceKeys) {
+    SecureStorage::deleteApiKey(keyName);
+  }
+}
+
+void loadPreferencesFromSettings(AIAssistantConfig &config) {
+  config.requireCtrlEnterToSend = parseStoredBool(
+      SettingsStorage::loadString(kRequireCtrlEnterName),
+      config.requireCtrlEnterToSend);
+  config.outputCodeOnly =
+      parseStoredBool(SettingsStorage::loadString(kOutputCodeOnlyName),
+                      config.outputCodeOnly);
+  config.outputPreserveStyle = parseStoredBool(
+      SettingsStorage::loadString(kOutputPreserveStyleName),
+      config.outputPreserveStyle);
+  config.outputMentionRisks = parseStoredBool(
+      SettingsStorage::loadString(kOutputMentionRisksName),
+      config.outputMentionRisks);
+  config.customPromptInstructions =
+      SettingsStorage::loadString(kCustomPromptInstructionsName);
+
+  config.responseLanguage = sanitizePromptResponseLanguage(parseStoredInt(
+      SettingsStorage::loadString(kResponseLanguageName),
+      static_cast<int>(config.responseLanguage)));
+  config.encodingPreference = sanitizePromptEncodingPreference(parseStoredInt(
+      SettingsStorage::loadString(kEncodingPreferenceName),
+      static_cast<int>(config.encodingPreference)));
+  config.promptPreset = sanitizePromptPreset(parseStoredInt(
+      SettingsStorage::loadString(kPromptPresetName),
+      static_cast<int>(config.promptPreset)));
+  config.detailLevel = sanitizePromptDetailLevel(parseStoredInt(
+      SettingsStorage::loadString(kDetailLevelName),
+      static_cast<int>(config.detailLevel)));
+  config.scenarioFlags = static_cast<unsigned int>(parseStoredInt(
+      SettingsStorage::loadString(kScenarioFlagsName),
+      static_cast<int>(config.scenarioFlags)));
+  config.uiLanguagePreference = sanitizeUiLanguagePreference(parseStoredInt(
+      SettingsStorage::loadString(kUiLanguagePreferenceName),
+      static_cast<int>(config.uiLanguagePreference)));
+  config.defaultProvider = sanitizeProvider(static_cast<LLMProvider>(
+      parseStoredInt(SettingsStorage::loadString(kDefaultProviderName),
+                     static_cast<int>(config.defaultProvider))));
+}
+
+void loadPreferencesFromLegacySecureStorage(AIAssistantConfig &config) {
+  config.requireCtrlEnterToSend =
+      SecureStorage::loadLegacyValue(kRequireCtrlEnterName) == L"1";
+  config.outputCodeOnly =
+      SecureStorage::loadLegacyValue(kOutputCodeOnlyName) == L"1";
+  config.outputPreserveStyle =
+      SecureStorage::loadLegacyValue(kOutputPreserveStyleName) != L"0";
+  config.outputMentionRisks =
+      SecureStorage::loadLegacyValue(kOutputMentionRisksName) == L"1";
+  config.customPromptInstructions =
+      SecureStorage::loadLegacyValue(kCustomPromptInstructionsName);
+
+  config.responseLanguage = sanitizePromptResponseLanguage(parseStoredInt(
+      SecureStorage::loadLegacyValue(kResponseLanguageName),
+      static_cast<int>(config.responseLanguage)));
+  config.encodingPreference = sanitizePromptEncodingPreference(parseStoredInt(
+      SecureStorage::loadLegacyValue(kEncodingPreferenceName),
+      static_cast<int>(config.encodingPreference)));
+  config.promptPreset = sanitizePromptPreset(parseStoredInt(
+      SecureStorage::loadLegacyValue(kPromptPresetName),
+      static_cast<int>(config.promptPreset)));
+  config.detailLevel = sanitizePromptDetailLevel(parseStoredInt(
+      SecureStorage::loadLegacyValue(kDetailLevelName),
+      static_cast<int>(config.detailLevel)));
+  config.scenarioFlags = static_cast<unsigned int>(parseStoredInt(
+      SecureStorage::loadLegacyValue(kScenarioFlagsName),
+      static_cast<int>(config.scenarioFlags)));
+  config.uiLanguagePreference = sanitizeUiLanguagePreference(parseStoredInt(
+      SecureStorage::loadLegacyValue(kUiLanguagePreferenceName),
+      static_cast<int>(config.uiLanguagePreference)));
+  config.defaultProvider = sanitizeProvider(static_cast<LLMProvider>(
+      parseStoredInt(SecureStorage::loadLegacyValue(kDefaultProviderName),
+                     static_cast<int>(config.defaultProvider))));
+}
+
+void savePreferencesToSettings(const AIAssistantConfig &config) {
+  SettingsStorage::saveSchemaVersion(kSettingsSchemaVersion);
+  SettingsStorage::saveString(
+      kDefaultProviderName,
+      std::to_wstring(static_cast<int>(sanitizeProvider(config.defaultProvider))));
+  SettingsStorage::saveString(
+      kUiLanguagePreferenceName,
+      std::to_wstring(static_cast<int>(config.uiLanguagePreference)));
+  SettingsStorage::saveString(
+      kResponseLanguageName,
+      std::to_wstring(static_cast<int>(config.responseLanguage)));
+  SettingsStorage::saveString(
+      kEncodingPreferenceName,
+      std::to_wstring(static_cast<int>(config.encodingPreference)));
+  SettingsStorage::saveString(
+      kPromptPresetName,
+      std::to_wstring(static_cast<int>(sanitizePromptPreset(
+          static_cast<int>(config.promptPreset)))));
+  SettingsStorage::saveString(
+      kDetailLevelName,
+      std::to_wstring(static_cast<int>(config.detailLevel)));
+  SettingsStorage::saveString(kScenarioFlagsName,
+                              std::to_wstring(config.scenarioFlags));
+  SettingsStorage::saveString(kOutputCodeOnlyName,
+                              config.outputCodeOnly ? L"1" : L"0");
+  SettingsStorage::saveString(kOutputPreserveStyleName,
+                              config.outputPreserveStyle ? L"1" : L"0");
+  SettingsStorage::saveString(kOutputMentionRisksName,
+                              config.outputMentionRisks ? L"1" : L"0");
+  SettingsStorage::saveString(kCustomPromptInstructionsName,
+                              config.customPromptInstructions);
+  SettingsStorage::saveString(kRequireCtrlEnterName,
+                              config.requireCtrlEnterToSend ? L"1" : L"0");
+}
+
 void addMessage(bool isUser, const std::wstring &content) {
   ChatMessage msg;
   msg.isUser = isUser;
@@ -1090,99 +1250,30 @@ void updateChatDisplay() {
 }
 
 void loadConfig() {
+  g_config = AIAssistantConfig{};
   g_config.openAIKey = SecureStorage::loadApiKey(kOpenAIKeyName);
   g_config.geminiKey = SecureStorage::loadApiKey(kGeminiKeyName);
   g_config.claudeKey = SecureStorage::loadApiKey(kClaudeKeyName);
   g_config.copilotKey = SecureStorage::loadApiKey(kCopilotKeyName);
-  g_config.requireCtrlEnterToSend =
-      SecureStorage::loadApiKey(kRequireCtrlEnterName) == L"1";
-  g_config.outputCodeOnly =
-      SecureStorage::loadApiKey(kOutputCodeOnlyName) == L"1";
-  g_config.outputPreserveStyle =
-      SecureStorage::loadApiKey(kOutputPreserveStyleName) != L"0";
-  g_config.outputMentionRisks =
-      SecureStorage::loadApiKey(kOutputMentionRisksName) == L"1";
-  g_config.customPromptInstructions =
-      SecureStorage::loadApiKey(kCustomPromptInstructionsName);
-
-  std::wstring savedResponseLanguage =
-      SecureStorage::loadApiKey(kResponseLanguageName);
-  if (!savedResponseLanguage.empty()) {
-    try {
-      g_config.responseLanguage =
-          sanitizePromptResponseLanguage(std::stoi(savedResponseLanguage));
-    } catch (...) {
-      g_config.responseLanguage = PromptResponseLanguage::FollowInterface;
-    }
-  }
-
-  std::wstring savedEncodingPreference =
-      SecureStorage::loadApiKey(kEncodingPreferenceName);
-  if (!savedEncodingPreference.empty()) {
-    try {
-      g_config.encodingPreference =
-          sanitizePromptEncodingPreference(std::stoi(savedEncodingPreference));
-    } catch (...) {
-      g_config.encodingPreference = PromptEncodingPreference::CurrentDocument;
-    }
-  }
-
-  std::wstring savedPromptPreset =
-      SecureStorage::loadApiKey(kPromptPresetName);
-  if (!savedPromptPreset.empty()) {
-    try {
-      g_config.promptPreset = sanitizePromptPreset(std::stoi(savedPromptPreset));
-    } catch (...) {
-      g_config.promptPreset = PromptPreset::Manual;
-    }
-  }
-
-  std::wstring savedDetailLevel = SecureStorage::loadApiKey(kDetailLevelName);
-  if (!savedDetailLevel.empty()) {
-    try {
-      g_config.detailLevel = sanitizePromptDetailLevel(std::stoi(savedDetailLevel));
-    } catch (...) {
-      g_config.detailLevel = PromptDetailLevel::Standard;
-    }
-  }
-
-  std::wstring savedScenarioFlags = SecureStorage::loadApiKey(kScenarioFlagsName);
-  if (!savedScenarioFlags.empty()) {
-    try {
-      g_config.scenarioFlags = static_cast<unsigned int>(std::stoul(savedScenarioFlags));
-    } catch (...) {
-      g_config.scenarioFlags = 0;
-    }
-  }
-
-  std::wstring savedLanguagePreference =
-      SecureStorage::loadApiKey(kUiLanguagePreferenceName);
-  if (!savedLanguagePreference.empty()) {
-    try {
-      g_config.uiLanguagePreference =
-          sanitizeUiLanguagePreference(std::stoi(savedLanguagePreference));
-    } catch (...) {
-      g_config.uiLanguagePreference = UiLanguagePreference::FollowNotepad;
-    }
+  if (SettingsStorage::loadSchemaVersion() >= kSettingsSchemaVersion) {
+    loadPreferencesFromSettings(g_config);
   } else {
-    g_config.uiLanguagePreference = UiLanguagePreference::FollowNotepad;
+    loadPreferencesFromLegacySecureStorage(g_config);
+    savePreferencesToSettings(g_config);
+    cleanupSecurePreferenceBlobs();
   }
 
-  std::wstring savedProvider = SecureStorage::loadApiKey(kDefaultProviderName);
-  if (!savedProvider.empty()) {
-    try {
-      int providerValue = std::stoi(savedProvider);
-      if (providerValue >= 0 &&
-          providerValue < static_cast<int>(LLMProvider::ProviderCount)) {
-        g_config.defaultProvider = sanitizeProvider(
-            static_cast<LLMProvider>(providerValue));
-      }
-    } catch (...) {
-      g_config.defaultProvider = LLMProvider::OpenAI;
-    }
-  } else {
-    g_config.defaultProvider = sanitizeProvider(g_config.defaultProvider);
-  }
+  g_config.defaultProvider = sanitizeProvider(g_config.defaultProvider);
+  g_config.uiLanguagePreference =
+      sanitizeUiLanguagePreference(static_cast<int>(g_config.uiLanguagePreference));
+  g_config.responseLanguage =
+      sanitizePromptResponseLanguage(static_cast<int>(g_config.responseLanguage));
+  g_config.encodingPreference = sanitizePromptEncodingPreference(
+      static_cast<int>(g_config.encodingPreference));
+  g_config.promptPreset =
+      sanitizePromptPreset(static_cast<int>(g_config.promptPreset));
+  g_config.detailLevel =
+      sanitizePromptDetailLevel(static_cast<int>(g_config.detailLevel));
 }
 
 void saveConfig(const AIAssistantConfig &config) {
@@ -1190,37 +1281,8 @@ void saveConfig(const AIAssistantConfig &config) {
   SecureStorage::saveApiKey(kGeminiKeyName, config.geminiKey);
   SecureStorage::saveApiKey(kClaudeKeyName, config.claudeKey);
   SecureStorage::saveApiKey(kCopilotKeyName, config.copilotKey);
-  SecureStorage::saveApiKey(
-      kDefaultProviderName,
-      std::to_wstring(static_cast<int>(sanitizeProvider(config.defaultProvider))));
-  SecureStorage::saveApiKey(
-      kUiLanguagePreferenceName,
-      std::to_wstring(static_cast<int>(config.uiLanguagePreference)));
-  SecureStorage::saveApiKey(
-      kResponseLanguageName,
-      std::to_wstring(static_cast<int>(config.responseLanguage)));
-  SecureStorage::saveApiKey(
-      kEncodingPreferenceName,
-      std::to_wstring(static_cast<int>(config.encodingPreference)));
-  SecureStorage::saveApiKey(
-      kPromptPresetName,
-      std::to_wstring(static_cast<int>(sanitizePromptPreset(
-          static_cast<int>(config.promptPreset)))));
-  SecureStorage::saveApiKey(
-      kDetailLevelName,
-      std::to_wstring(static_cast<int>(config.detailLevel)));
-  SecureStorage::saveApiKey(kScenarioFlagsName,
-                            std::to_wstring(config.scenarioFlags));
-  SecureStorage::saveApiKey(kOutputCodeOnlyName,
-                            config.outputCodeOnly ? L"1" : L"0");
-  SecureStorage::saveApiKey(kOutputPreserveStyleName,
-                            config.outputPreserveStyle ? L"1" : L"0");
-  SecureStorage::saveApiKey(kOutputMentionRisksName,
-                            config.outputMentionRisks ? L"1" : L"0");
-  SecureStorage::saveApiKey(kCustomPromptInstructionsName,
-                            config.customPromptInstructions);
-  SecureStorage::saveApiKey(kRequireCtrlEnterName,
-                            config.requireCtrlEnterToSend ? L"1" : L"0");
+  savePreferencesToSettings(config);
+  cleanupSecurePreferenceBlobs();
   g_config = config;
   g_config.defaultProvider = sanitizeProvider(g_config.defaultProvider);
   g_config.uiLanguagePreference =
@@ -1666,7 +1728,7 @@ void updateModelCombo() {
     ::ShowWindow(signInButton, SW_HIDE);
   }
 
-  const std::wstring apiKey = getProviderApiKey(g_currentProvider);
+  std::wstring apiKey = getProviderApiKey(g_currentProvider);
   if (apiKey.empty()) {
     populateModelComboPlaceholder(modelCombo, g_uiLanguage == UiLanguage::Chinese ? L"\u8ACB\u5148\u5728\u8A2D\u5B9A\u4E2D\u8A2D\u5B9A API Key" : L"Configure API key in Settings");
     return;
@@ -1685,8 +1747,11 @@ void updateModelCombo() {
     break;
   default:
     populateModelComboPlaceholder(modelCombo, g_uiLanguage == UiLanguage::Chinese ? L"\u4F9B\u61C9\u5546\u7121\u6CD5\u4F7F\u7528" : L"Provider unavailable");
+    wipeString(apiKey);
     return;
   }
+
+  wipeString(apiKey);
 
   if (!response.success || response.models.empty()) {
     populateModelComboPlaceholder(modelCombo, g_uiLanguage == UiLanguage::Chinese ? L"\u7121\u6CD5\u8F09\u5165\u6A21\u578B" : L"Unable to load models");
@@ -1939,7 +2004,7 @@ std::wstring invokeProvider(const std::wstring &prompt) {
     return L"[Notice] GitHub Copilot is currently paused in this build.";
   }
 
-  const std::wstring apiKey = getProviderApiKey(g_currentProvider);
+  std::wstring apiKey = getProviderApiKey(g_currentProvider);
 
   if (apiKey.empty()) {
     return L"[Error] API key not configured for " + getProviderName(g_currentProvider) +
@@ -1956,21 +2021,27 @@ std::wstring invokeProvider(const std::wstring &prompt) {
     if (isInterruptedConversationMessage(response.content)) {
       LLMResponse retry = callCurrentProvider(apiKey, prompt);
       if (retry.success && !isInterruptedConversationMessage(retry.content)) {
+        wipeString(apiKey);
         return retry.content;
       }
+      wipeString(apiKey);
       return buildInterruptedConversationNotice();
     }
+    wipeString(apiKey);
     return response.content;
   }
 
   if (isInterruptedConversationMessage(response.errorMessage)) {
     LLMResponse retry = callCurrentProvider(apiKey, prompt);
     if (retry.success && !isInterruptedConversationMessage(retry.content)) {
+      wipeString(apiKey);
       return retry.content;
     }
+    wipeString(apiKey);
     return buildInterruptedConversationNotice();
   }
 
+  wipeString(apiKey);
   return L"[Error] " + getProviderName(g_currentProvider) +
          L" API call failed:\n" + response.errorMessage;
 }
@@ -2090,6 +2161,7 @@ INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT message, WPARAM wParam,
       config->geminiKey = trimWhitespace(text);
       ::GetWindowTextW(::GetDlgItem(hwnd, IDC_CLAUDE_KEY_EDIT), text, 512);
       config->claudeKey = trimWhitespace(text);
+      SecureZeroMemory(text, sizeof(text));
       capturePromptSettingsFromDialog(hwnd, *config);
 
       int providerSelection = static_cast<int>(::SendMessageW(
@@ -2178,6 +2250,7 @@ INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT message, WPARAM wParam,
       config->geminiKey = trimWhitespace(text);
       ::GetWindowTextW(::GetDlgItem(hwnd, IDC_CLAUDE_KEY_EDIT), text, 512);
       config->claudeKey = trimWhitespace(text);
+      SecureZeroMemory(text, sizeof(text));
       capturePromptSettingsFromDialog(hwnd, *config);
 
       ::EndDialog(hwnd, IDOK);

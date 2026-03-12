@@ -44,6 +44,7 @@ This keeps the public Git tag clean while preserving the exact four-part DLL ver
 - Packaging script builds a Plugins Admin style zip
 - Packaging script now emits a schema-shaped JSON entry with all required metadata fields
 - The package places `NppAIAssistant.dll` at the zip root
+- The packaging script rejects staged `.pdb` symbol files before zip creation
 - Documentation is placed under `doc/NppAIAssistant/`
 
 ### Remaining external step

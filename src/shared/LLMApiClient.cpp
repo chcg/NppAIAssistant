@@ -390,9 +390,11 @@ ModelListResponse LLMApiClient::listGeminiModels(const std::wstring &apiKey) {
     return response;
   }
 
-  const std::wstring url =
-      L"https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey;
-  HttpResponse httpResponse = HttpClient::get(url);
+  std::map<std::wstring, std::wstring> headers;
+  headers[L"x-goog-api-key"] = apiKey;
+  HttpResponse httpResponse =
+      HttpClient::get(L"https://generativelanguage.googleapis.com/v1beta/models",
+                      headers);
   if (!httpResponse.success) {
     response.errorMessage = L"HTTP request failed: " + httpResponse.errorMessage;
     if (!httpResponse.body.empty()) {
@@ -548,10 +550,9 @@ LLMResponse LLMApiClient::callGemini(const std::wstring &apiKey,
     return response;
   }
 
-  // Build URL with API key
   std::wstring url =
       L"https://generativelanguage.googleapis.com/v1beta/models/" + model +
-      L":generateContent?key=" + apiKey;
+      L":generateContent";
 
   // Build request body
   std::wstring escapedPrompt = escapeJsonString(prompt);
@@ -561,6 +562,7 @@ LLMResponse LLMApiClient::callGemini(const std::wstring &apiKey,
   // Set headers
   std::map<std::wstring, std::wstring> headers;
   headers[L"Content-Type"] = L"application/json";
+  headers[L"x-goog-api-key"] = apiKey;
 
   // Make request
   HttpResponse httpResponse = HttpClient::post(url, requestBody, headers);

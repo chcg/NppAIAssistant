@@ -50,6 +50,24 @@ std::string HttpClient::wideToUtf8(const std::wstring &wide) {
   return utf8;
 }
 
+std::wstring HttpClient::sanitizeUrl(const std::wstring &url) {
+  std::wstring sanitized = url;
+
+  const std::wstring keyMarker = L"key=";
+  size_t markerPos = sanitized.find(keyMarker);
+  while (markerPos != std::wstring::npos) {
+    size_t valueStart = markerPos + keyMarker.size();
+    size_t valueEnd = sanitized.find_first_of(L"&#", valueStart);
+    if (valueEnd == std::wstring::npos) {
+      valueEnd = sanitized.size();
+    }
+    sanitized.replace(valueStart, valueEnd - valueStart, L"<redacted>");
+    markerPos = sanitized.find(keyMarker, valueStart + 10);
+  }
+
+  return sanitized;
+}
+
 bool HttpClient::parseUrl(const std::wstring &url, std::wstring &host,
                           std::wstring &path, INTERNET_PORT &port,
                           bool &isHttps) {
@@ -91,7 +109,7 @@ HttpClient::post(const std::wstring &url, const std::wstring &body,
   bool isHttps;
 
   if (!parseUrl(url, host, path, port, isHttps)) {
-    response.errorMessage = L"Failed to parse URL: " + url;
+    response.errorMessage = L"Failed to parse URL: " + sanitizeUrl(url);
     return response;
   }
 
@@ -221,7 +239,7 @@ HttpResponse HttpClient::get(const std::wstring &url,
   bool isHttps;
 
   if (!parseUrl(url, host, path, port, isHttps)) {
-    response.errorMessage = L"Failed to parse URL: " + url;
+    response.errorMessage = L"Failed to parse URL: " + sanitizeUrl(url);
     return response;
   }
 

@@ -66,6 +66,8 @@ private:
         INTERNET_PORT& port,
         bool& isHttps
     );
+
+    static std::wstring sanitizeUrl(const std::wstring& url);
     
     // Convert UTF-8 to wide string
     static std::wstring utf8ToWide(const std::string& utf8);

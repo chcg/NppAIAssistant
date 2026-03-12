@@ -40,6 +40,13 @@ Default script assumptions:
 5. Confirm models are loaded dynamically for that provider.
 6. Choose the UI language if needed.
 
+## Settings and Secret Storage
+
+- API keys and OAuth tokens are stored in `%LocalAppData%\Notepad++\AIAssistant`.
+- Secret values are protected with Windows DPAPI.
+- Non-secret preferences are stored in `%AppData%\Notepad++\plugins\config\NppAIAssistant.ini`.
+- Older roaming secure blobs are migrated automatically on first launch of the updated build.
+
 ## Prompt Builder
 
 The settings window includes a single-turn prompt builder.

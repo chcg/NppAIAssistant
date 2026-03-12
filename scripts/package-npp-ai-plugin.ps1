@@ -16,6 +16,7 @@ if ([string]::IsNullOrWhiteSpace($OutDir)) {
 $pluginRoot = $repoRoot
 $buildDir = Join-Path $repoRoot "build\$Platform\$Configuration\plugins\NppAIAssistant"
 $dllPath = Join-Path $buildDir "NppAIAssistant.dll"
+$pdbPath = Join-Path $buildDir "NppAIAssistant.pdb"
 $metadataPath = Join-Path $pluginRoot "plugin-admin-metadata.json"
 
 if (-not (Test-Path $dllPath)) {
@@ -59,6 +60,25 @@ if (Test-Path (Join-Path $repoRoot "README_zh-TW.md")) {
 }
 Copy-Item (Join-Path $repoRoot "LICENSE") (Join-Path $docRoot "LICENSE") -Force
 Copy-Item (Join-Path $repoRoot "docs\USAGE.md") (Join-Path $docRoot "USAGE.md") -Force
+if (Test-Path (Join-Path $repoRoot "docs\DEVELOPMENT_LOG.md")) {
+    Copy-Item (Join-Path $repoRoot "docs\DEVELOPMENT_LOG.md") (Join-Path $docRoot "DEVELOPMENT_LOG.md") -Force
+}
+if (Test-Path (Join-Path $repoRoot "docs\SECURITY_REMEDIATION.md")) {
+    Copy-Item (Join-Path $repoRoot "docs\SECURITY_REMEDIATION.md") (Join-Path $docRoot "SECURITY_REMEDIATION.md") -Force
+}
+if (Test-Path (Join-Path $repoRoot "docs\SECURITY_VERIFICATION.md")) {
+    Copy-Item (Join-Path $repoRoot "docs\SECURITY_VERIFICATION.md") (Join-Path $docRoot "SECURITY_VERIFICATION.md") -Force
+}
+
+if (Test-Path $pdbPath) {
+    Write-Host "Local PDB detected at $pdbPath. It will not be included in the release package."
+}
+
+$stagedSymbols = Get-ChildItem -Path $stageRoot -Filter *.pdb -Recurse -ErrorAction SilentlyContinue
+if ($stagedSymbols) {
+    $symbolList = ($stagedSymbols | ForEach-Object { $_.FullName }) -join [Environment]::NewLine
+    throw "Refusing to package symbol files:`n$symbolList"
+}
 
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
