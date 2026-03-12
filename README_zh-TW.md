@@ -2,6 +2,13 @@
 
 # NppAIAssistant for Notepad++
 
+[![Release](https://img.shields.io/github/v/release/pingqLIN/NppAIAssistant?label=release)](https://github.com/pingqLIN/NppAIAssistant/releases/tag/v0.1.0)
+[![Downloads](https://img.shields.io/github/downloads/pingqLIN/NppAIAssistant/total)](https://github.com/pingqLIN/NppAIAssistant/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](https://notepad-plus-plus.org/)
+[![Notepad++](https://img.shields.io/badge/Notepad++-Plugin-90E59A)](https://notepad-plus-plus.org/)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Plugins Admin PR](https://img.shields.io/badge/Plugins%20Admin-PR%20submitted-success)](https://github.com/notepad-plus-plus/nppPluginList/pull/1051)
+
 一個為 Notepad++ 設計的輕量 AI 外掛，強調提示詞可視性、模組化單輪提示設定，以及不保留隱藏記憶的可預測行為。
 
 這個 repository 專注在外掛本身，不攜帶完整 Notepad++ 上游歷史，因此更適合公開發布、程式審查、打包與版本管理。
